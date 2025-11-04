@@ -2,32 +2,83 @@ name: Build and Release
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup MinGW
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: mingw-w64-x86_64-gcc
-
-    - name: Build
-      shell: msys2 {0}
+    - name: Install MinGW
       run: |
-        gcc autocalibrate.c -o autocalibrate.exe -luser32
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-x86-64
+
+    - name: Build Windows executable
+      run: make build
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: autocalibrate-exe
+        path: dist/autocalibrate.exe
+        retention-days: 30
+
+  auto-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install MinGW
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-x86-64
+
+    - name: Build Windows executable
+      run: make build
+
+    - name: Get version from git
+      id: version
+      run: |
+        VERSION=$(git describe --tags --always)
+        if [[ ! $VERSION =~ ^v[0-9] ]]; then
+          VERSION="v1.0.$(git rev-list --count HEAD)"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        files: autocalibrate.exe
-        body: Auto-calibration tool for IWBServer
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## AutoCalibrate Tool
+
+          Windows utility to trigger auto-calibration on IWBServer.
+
+          ### How to use:
+          1. Download `autocalibrate.exe`
+          2. Run the executable
+          3. It will send EP_START_QUICK_AUTO_CAL command to IWBServer
+
+          ### Features:
+          - Sends WM_COPYDATA message to IWBServer window
+          - Minimal executable with no console output
+          - Returns exit code 0 on success, 1 on failure
+        files: ./dist/autocalibrate.exe
+        draft: false
+        prerelease: false
