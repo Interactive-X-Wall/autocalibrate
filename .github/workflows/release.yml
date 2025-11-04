@@ -1,0 +1,33 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: mingw-w64-x86_64-gcc
+
+    - name: Build
+      shell: msys2 {0}
+      run: |
+        gcc autocalibrate.c -o autocalibrate.exe -luser32
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: autocalibrate.exe
+        body: Auto-calibration tool for IWBServer
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
